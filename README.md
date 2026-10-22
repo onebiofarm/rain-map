@@ -51,6 +51,7 @@ git branch -M main && git remote add origin https://github.com/<ชื่อผ�
 
 ## โครงสร้างโค้ดสั้นๆ (`docs/app.js`)
 - `refreshRadar()` เลือกช่วงไทล์ที่ครอบหน้าจอ (≤20 ไทล์, ซูม ≤7) ต่อเป็นภาพเดียวต่อเฟรม แสดงผ่าน `L.imageOverlay`
+- `intensityOf()` แปลงสีจากพาเลตของ RainViewer (เบจ=ฝนปรอย, ฟ้า→น้ำเงินเข้ม=เบา→ปานกลาง, เหลือง→แดง=หนัก) เป็นค่าความแรง 0-1 แล้ว `recolor()` วาดใหม่ด้วยสเกลสีเดียวกับชั้นพยากรณ์และคำอธิบายสัญลักษณ์
 - `computeNowcast()` → `estimateMotion()` หาเวกเตอร์การเคลื่อนที่ (ค้นหาทั่วภาพ + ปรับละเอียดรายบล็อก 12 px) แล้ว warp เฟรมล่าสุดไปข้างหน้า 6 ก้าว
 - `refreshForecast()` ดึง Open-Meteo หลายพิกัดในคำขอเดียว → `renderForecastFrame()` วาด heatmap
 - `refreshFlood()` ถอดความสูงจาก Terrarium PNG → ความสูงเหนือจุดต่ำสุดในรัศมี 2.5 กม. + ความชัน × ฝน 24 ชม.

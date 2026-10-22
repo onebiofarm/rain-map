@@ -74,7 +74,9 @@ select { background: #122536; color: var(--text); border: 1px solid rgba(255,255
 
 .timeline { display: flex; align-items: center; gap: 8px; background: var(--panel); border-radius: var(--radius); box-shadow: var(--shadow); padding: 8px 10px; backdrop-filter: blur(8px); }
 .slider-wrap { flex: 1; min-width: 0; }
-.ticks { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); padding: 0 2px; }
+.ticks { position: relative; height: 13px; font-size: 10px; color: var(--muted); margin: 0 8px; }
+.ticks span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
+.ticks .t-now::before { content: ''; position: absolute; left: 50%; top: 13px; width: 2px; height: 8px; background: #fff; opacity: .7; }
 .ticks .t-now { color: #fff; font-weight: 600; }
 .ticks .t-next { color: var(--accent-2); }
 .ticks .t-fc { color: #9ad3ff; }

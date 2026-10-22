@@ -212,6 +212,8 @@ function initMap() {
   state.floodOverlay = L.imageOverlay('', [[0, 0], [0, 0]], { opacity: 0.75, interactive: false, zIndex: 390 });
 
   map.on('moveend', onMoveEnd);
+  map.on('resize', onMoveEnd);   // rotation, browser toolbar show/hide, window resize: re-check coverage
+  if (window.ResizeObserver) new ResizeObserver(() => map.invalidateSize()).observe(document.getElementById('map'));
   map.on('click', (e) => setPoint(e.latlng.lat, e.latlng.lng, T().pinned, 'pin'));
 }
 
@@ -313,13 +315,15 @@ async function refreshRadar(force = false) {
   const urlFn = (path) => (z, x, y) => `${meta.host}${path}/256/${z}/${x}/${y}/${CFG.radarColor}/1_1.png`;
 
   // Newest frame first so "now" shows immediately; the 4 newest feed the nowcast.
+  // The oldest 6 frames (60-120 min ago) wait 12 s so a quick pan/zoom keeps its request budget.
   const order = [...radar.frames].reverse();
   let loaded = 0;
   for (let i = 0; i < order.length; i++) {
     const fr = order[i];
+    if (i === 7) { await sleep(12000); if (gen !== state.gen) return; }
     const canvas = await stitch(region, urlFn(fr.path), (u, p) => radarLoader.load(u, p), 100 - i);
     if (gen !== state.gen) return;
-    fr.canvas = canvas; fr.url = await canvasToUrl(canvas);
+    fr.canvas = canvas; fr.url = await canvasToUrl(recolor(canvas));
     loaded++;
     if (loaded === 1) { state.radar = radar; rebuildTimeline(true); }
     if (loaded === 4) { spinner(T().computing); await computeNowcast(radar, gen); if (gen !== state.gen) return; rebuildTimeline(); spinner(null); refreshPointStatus(); }
@@ -328,12 +332,45 @@ async function refreshRadar(force = false) {
   spinner(null);
 }
 
+/* RainViewer's served palette (measured from unsmoothed tiles): semi-transparent beige = drizzle,
+   cyan -> dark blue = light to moderate rain, yellow -> orange -> red = heavy, pink = extreme.
+   Map any pixel to a 0..1 intensity so radar, nowcast and forecast share one colour scale. */
 function intensityOf(r, g, b, a) {
-  if (a < 40) return 0;
-  const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-  return (a / 255) * (1 - (lum / 255) * 0.65);
+  if (a < 20) return 0;
+  const af = a / 255;
+  if (r === 255 && g === 170 && b === 255) return 1;                               // pink, extreme
+  if (r > 200 && g > 60 && b < 40) return 0.62 + 0.18 * clamp((238 - g) / 170, 0, 1);   // yellow -> orange
+  if (r > 100 && g < 70 && b < 70) return 0.8 + 0.15 * clamp((255 - r) / 112, 0, 1);    // red -> dark red
+  if (b > r + 40 && b >= g * 0.9 && r < 150) return 0.2 + 0.42 * clamp((238 - b) / 134, 0, 1); // cyan -> dark blue
+  if (r > 90 && r >= g && g >= b && r - b < 110) return 0.04 + 0.16 * af;             // beige drizzle (alpha ramp)
+  const lum = 0.299 * r + 0.587 * g + 0.114 * b;                                   // smoothed blends
+  return af * (1 - (lum / 255) * 0.65) * 0.6;
 }
-function strengthClass(s) { return s < 0.3 ? 0 : s < 0.5 ? 1 : s < 0.65 ? 2 : 3; }
+const RAIN_THRESHOLD = 0.15;                       // "it is raining" (drizzle with alpha >= ~170 counts)
+function strengthClass(s) { return s < 0.21 ? 0 : s < 0.45 ? 1 : s < 0.65 ? 2 : 3; }
+/* One colour ramp for every layer (matches the legend): light blue, blue, dark blue, purple, red. */
+function levelColor(s) {
+  if (s < 0.04) return [0, 0, 0, 0];
+  if (s < 0.2) return [154, 211, 255, Math.round(90 + 110 * (s - 0.04) / 0.16)];
+  if (s < 0.45) return [58, 134, 255, 220];
+  if (s < 0.65) return [26, 47, 181, 230];
+  if (s < 0.8) return [177, 0, 158, 240];
+  return [255, 40, 60, 250];
+}
+function recolor(canvas) {
+  const W = canvas.width, H = canvas.height;
+  const src = canvas.getContext('2d').getImageData(0, 0, W, H).data;
+  const out = document.createElement('canvas'); out.width = W; out.height = H;
+  const octx = out.getContext('2d'), img = octx.createImageData(W, H), d = img.data;
+  for (let i = 0; i < src.length; i += 4) {
+    const s = intensityOf(src[i], src[i + 1], src[i + 2], src[i + 3]);
+    if (s < 0.04) continue;
+    const c = levelColor(s);
+    d[i] = c[0]; d[i + 1] = c[1]; d[i + 2] = c[2]; d[i + 3] = c[3];
+  }
+  octx.putImageData(img, 0, 0);
+  return out;
+}
 
 function grayFrame(canvas, f) {
   const W = canvas.width, H = canvas.height, ws = Math.ceil(W / f), hs = Math.ceil(H / f);
@@ -471,7 +508,7 @@ async function computeNowcast(radar, gen) {
     const out = document.createElement('canvas'); out.width = W; out.height = H;
     const octx = out.getContext('2d');
     const img = octx.createImageData(W, H), od = img.data;
-    const decay = 1 - 0.07 * k;
+    const decay = 1;   // no artificial fading: a hindcast test showed decay only lowers accuracy versus persistence
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
         const c = (y >> 2) * cw + (x >> 2);
@@ -488,7 +525,7 @@ async function computeNowcast(radar, gen) {
       if ((y & 127) === 127) { await sleep(0); if (gen !== state.gen) return; }
     }
     octx.putImageData(img, 0, 0);
-    radar.nowcast.push({ time: frames[last].time + k * CFG.nowcastStepMin * 60, canvas: out, url: await canvasToUrl(out) });
+    radar.nowcast.push({ time: frames[last].time + k * CFG.nowcastStepMin * 60, canvas: out, url: await canvasToUrl(recolor(out)) });
     if (gen !== state.gen) return;
   }
 }
@@ -531,7 +568,9 @@ async function refreshForecast(force = false) {
   const view = map.getBounds();
   if (!force && state.forecast && state.forecast.bounds.contains(view) && Date.now() - state.forecast.at < 30 * 60000 && state.forecast.zoomBucket === zoomBucket()) return;
   const b = view.pad(0.35);
-  const { nx, ny } = CFG.forecastGrid;
+  // finer grid when zoomed in (model resolution is ~10-25 km, so more points only help up to a point)
+  const z = map.getZoom();
+  const nx = z >= 8 ? 24 : z >= 7 ? 20 : CFG.forecastGrid.nx, ny = z >= 8 ? 18 : z >= 7 ? 15 : CFG.forecastGrid.ny;
   const lats = [], lons = [];
   const south = Math.max(-85, b.getSouth()), north = Math.min(85, b.getNorth());
   for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
@@ -705,13 +744,23 @@ function rebuildTimeline(resetToNow = false) {
   const f = state.forecast;
   if (f) {
     const lastT = frames.length ? frames[frames.length - 1].time : Date.now() / 1000;
+    const now = Date.now() / 1000;
     for (let h = 0; h < f.times.length; h++) {
       const t = f.times[h];
       if (t <= lastT + 1800) continue;
-      if (t > Date.now() / 1000 + CFG.forecastHours * 3600) break;
+      if (t > now + CFG.forecastHours * 3600) break;
+      // hourly for the first 12 h, then every 3 h, so the slider is not dominated by far-out model frames
+      if (t > now + 12 * 3600 && (new Date(t * 1000).getUTCHours() % 3) !== 0) continue;
       frames.push({ kind: 'forecast', time: t, h });
     }
   }
+  // place the tick labels where those frames really sit on the slider
+  const n = Math.max(1, frames.length - 1);
+  const segMid = (kind) => { let a = -1, b = -1; frames.forEach((x, i) => { if (x.kind === kind) { if (a < 0) a = i; b = i; } }); return a < 0 ? -1 : (a + b) / 2; };
+  const place = (sel, idx) => { const el = $(sel); if (idx < 0) { el.style.display = 'none'; return; } el.style.display = ''; el.style.left = (idx / n * 100) + '%'; };
+  let nowIdx = -1; frames.forEach((x, i) => { if (x.kind === 'radar') nowIdx = i; });
+  const pastMid = nowIdx > 2 ? (nowIdx - 1) / 2 : -1;
+  place('.t-past', pastMid); place('.t-now', nowIdx); place('.t-next', segMid('nowcast')); place('.t-fc', segMid('forecast'));
   const prevTime = state.frames[state.frameIndex] ? state.frames[state.frameIndex].time : null;
   state.frames = frames;
   const slider = $('#timeSlider');
@@ -748,7 +797,8 @@ function showFrame(idx) {
   }
   const on = { radar: $('#lyrRadar').checked, nowcast: $('#lyrNowcast').checked, forecast: $('#lyrForecast').checked }[fr.kind];
   if (!on) { state.overlay.setOpacity(0); return; }
-  state.overlay.setOpacity(state.opacity);
+  // model forecast frames are coarse (~10-25 km), so draw them softer than radar
+  state.overlay.setOpacity(fr.kind === 'forecast' ? state.opacity * 0.65 : state.opacity);
   if (fr.kind === 'forecast') {
     const e = renderForecastFrame(fr.h);
     state.overlay.setUrl(e.url).setBounds(state.forecast.bounds);
@@ -817,7 +867,7 @@ function renderStatus() {
     const nowI = sampleCanvas(latestFrame.canvas, r.region, p.lat, p.lon);
     if (nowI != null) {
       const series = [{ dt: 0, i: nowI }, ...r.nowcast.map((n, k) => ({ dt: (k + 1) * CFG.nowcastStepMin, i: sampleCanvas(n.canvas, r.region, p.lat, p.lon) ?? 0 }))];
-      const TH = 0.12;
+      const TH = RAIN_THRESHOLD;
       if (nowI >= TH) {
         const stop = series.find((s) => s.i < TH);
         headline = t.rainingNow(t.strength[strengthClass(nowI)]);
