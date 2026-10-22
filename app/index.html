@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<title>ฝนตกไหม - แผนที่ฝนล่วงหน้า</title>
+<meta name="description" content="แผนที่เรดาร์ฝนและพยากรณ์ฝนล่วงหน้าแบบฟรี สำหรับไทยและอาเซียน">
+<meta name="theme-color" content="#0b1b2b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ฝนตกไหม">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" crossorigin="">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="map" role="application" aria-label="แผนที่ฝน"></div>
+
+<!-- Top bar -->
+<header class="topbar">
+  <button class="iconbtn" id="btnMenu" aria-label="เมนู" title="เมนู">
+    <svg viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+  </button>
+  <div class="search">
+    <input id="searchInput" type="search" placeholder="ค้นหาเมือง อำเภอ สถานที่…" autocomplete="off" enterkeyhint="search">
+    <ul id="searchResults" class="results" hidden></ul>
+  </div>
+  <button class="iconbtn" id="btnLocate" aria-label="ตำแหน่งของฉัน" title="ตำแหน่งของฉัน">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="8"/></svg>
+  </button>
+  <button class="iconbtn" id="btnLayers" aria-label="ชั้นข้อมูล" title="ชั้นข้อมูล">
+    <svg viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/><path d="M3 17l9 5 9-5"/></svg>
+  </button>
+</header>
+
+<!-- Layer popover -->
+<div class="popover" id="layersPopover" hidden>
+  <label><input type="checkbox" id="lyrRadar" checked> เรดาร์ฝน (ย้อนหลัง 2 ชม.)</label>
+  <label><input type="checkbox" id="lyrNowcast" checked> คาดการณ์ 60 นาที (คำนวณจากเรดาร์)</label>
+  <label><input type="checkbox" id="lyrForecast" checked> พยากรณ์รายชั่วโมง (Open-Meteo)</label>
+  <label><input type="checkbox" id="lyrFlood"> พื้นที่เสี่ยงน้ำท่วม (ประมาณการ)</label>
+  <label><input type="checkbox" id="lyrClouds"> เมฆดาวเทียม Himawari IR (NASA)</label>
+  <label><input type="checkbox" id="lyrSatRain"> ฝนดาวเทียม IMERG (NASA, ช้า ~4 ชม.)</label>
+  <div class="row">
+    <span>ความทึบ</span>
+    <input type="range" id="opacity" min="0.2" max="1" step="0.05" value="0.8">
+  </div>
+  <div class="row">
+    <span>แผนที่พื้น</span>
+    <select id="basemap">
+      <option value="dark">มืด</option>
+      <option value="light">สว่าง</option>
+      <option value="osm">OpenStreetMap</option>
+    </select>
+  </div>
+</div>
+
+<!-- Side drawer -->
+<aside class="drawer" id="drawer" aria-hidden="true">
+  <div class="drawer-head">
+    <h2>ฝนตกไหม</h2>
+    <button class="iconbtn" id="btnCloseDrawer" aria-label="ปิด"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+  <section>
+    <h3>รายการโปรด</h3>
+    <ul id="favList" class="favlist"></ul>
+    <button class="btn" id="btnAddFav">+ บันทึกจุดที่เลือกไว้</button>
+  </section>
+  <section>
+    <h3>การตั้งค่า</h3>
+    <label class="row"><span>ภาษา / Language</span>
+      <select id="lang"><option value="th">ไทย</option><option value="en">English</option></select>
+    </label>
+    <label class="row"><span>หน่วยเวลา</span>
+      <select id="clock"><option value="24">24 ชม.</option><option value="12">12 ชม.</option></select>
+    </label>
+  </section>
+  <section class="credits">
+    <h3>แหล่งข้อมูล</h3>
+    <p>เรดาร์: <a href="https://www.rainviewer.com/" target="_blank" rel="noopener">RainViewer</a> (ใช้ส่วนตัว/การศึกษา)<br>
+    พยากรณ์ ค้นหา น้ำในแม่น้ำ: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> (CC-BY 4.0)<br>
+    ดาวเทียม: <a href="https://earthdata.nasa.gov/gibs" target="_blank" rel="noopener">NASA GIBS</a><br>
+    ภูมิประเทศ: <a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noopener">Terrain Tiles (AWS Open Data)</a><br>
+    แผนที่: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>, © <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a></p>
+    <p class="small">การคาดการณ์ 60 นาทีและพื้นที่เสี่ยงน้ำท่วมเป็นการประมาณการจากข้อมูลสาธารณะ ไม่ใช่คำเตือนทางราชการ โปรดติดตามประกาศจากกรมอุตุนิยมวิทยาและ ปภ.</p>
+    <p class="small" id="version"></p>
+  </section>
+</aside>
+<div class="scrim" id="scrim" hidden></div>
+
+<!-- Bottom panel -->
+<footer class="bottom">
+  <div class="card" id="statusCard">
+    <div class="card-title" id="statusTitle">กดปุ่มตำแหน่ง หรือแตะบนแผนที่เพื่อดูฝนที่จุดนั้น</div>
+    <div class="card-sub" id="statusSub"></div>
+    <canvas id="miniChart" width="600" height="70" aria-label="กราฟฝนรายชั่วโมง"></canvas>
+  </div>
+  <div class="timeline">
+    <button class="iconbtn" id="btnPlay" aria-label="เล่น"><svg viewBox="0 0 24 24"><path d="M7 5v14l11-7z" fill="currentColor" stroke="none"/></svg></button>
+    <div class="slider-wrap">
+      <div class="ticks"><span class="t-past">ย้อนหลัง</span><span class="t-now">ตอนนี้</span><span class="t-next">คาดการณ์</span><span class="t-fc">พยากรณ์</span></div>
+      <input type="range" id="timeSlider" min="0" max="0" value="0" step="1">
+    </div>
+    <div class="timelabel" id="timeLabel">--:--</div>
+  </div>
+  <div class="legend" id="legend">
+    <span class="lg" style="background:#9ad3ff"></span>เบา
+    <span class="lg" style="background:#3a86ff"></span>ปานกลาง
+    <span class="lg" style="background:#1a2fb5"></span>หนัก
+    <span class="lg" style="background:#b1009e"></span>หนักมาก
+    <span class="lg fl" style="background:#ffb000"></span>เสี่ยงท่วม
+  </div>
+  <div class="attrib" id="attrib">
+    <a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a> ·
+    <span id="attribBase">Tiles © <a href="https://www.esri.com/" target="_blank" rel="noopener">Esri</a></span> ·
+    Radar © <a href="https://www.rainviewer.com/" target="_blank" rel="noopener">RainViewer</a> ·
+    <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> CC-BY 4.0 ·
+    <a href="https://earthdata.nasa.gov/gibs" target="_blank" rel="noopener">NASA GIBS</a> ·
+    <a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noopener">Terrain Tiles</a>
+  </div>
+</footer>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js" crossorigin=""></script>
+<script src="app.js"></script>
+</body>
+</html>
