@@ -40,7 +40,6 @@
 <div class="popover" id="layersPopover" hidden>
   <label><input type="checkbox" id="lyrRadar" checked> เรดาร์ฝน (ย้อนหลัง 2 ชม.)</label>
   <label><input type="checkbox" id="lyrNowcast" checked> คาดการณ์ 60 นาที (คำนวณจากเรดาร์)</label>
-  <label><input type="checkbox" id="lyrForecast" checked> พยากรณ์รายชั่วโมง (Open-Meteo)</label>
   <label><input type="checkbox" id="lyrFlood"> พื้นที่เสี่ยงน้ำท่วม (ประมาณการ)</label>
   <label><input type="checkbox" id="lyrClouds"> เมฆดาวเทียม Himawari IR (NASA)</label>
   <label><input type="checkbox" id="lyrSatRain"> ฝนดาวเทียม IMERG (NASA, ช้า ~4 ชม.)</label>
@@ -101,7 +100,7 @@
   <div class="timeline">
     <button class="iconbtn" id="btnPlay" aria-label="เล่น"><svg viewBox="0 0 24 24"><path d="M7 5v14l11-7z" fill="currentColor" stroke="none"/></svg></button>
     <div class="slider-wrap">
-      <div class="ticks"><span class="t-past">ย้อนหลัง</span><span class="t-now">ตอนนี้</span><span class="t-next">คาดการณ์</span><span class="t-fc">พยากรณ์</span></div>
+      <div class="ticks"><span class="t-past">ย้อนหลัง</span><span class="t-now">ตอนนี้</span><span class="t-next">คาดการณ์ 60 นาที</span></div>
       <input type="range" id="timeSlider" min="0" max="0" value="0" step="1">
     </div>
     <div class="timelabel" id="timeLabel">--:--</div>

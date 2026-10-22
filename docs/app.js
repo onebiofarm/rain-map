@@ -95,12 +95,11 @@ const UI_TEXT = {
     '#searchInput': ['placeholder', 'Search city, district, place…'],
     '#lyrRadar': ['label', 'Rain radar (past 2 h)'],
     '#lyrNowcast': ['label', '60-min nowcast (computed from radar)'],
-    '#lyrForecast': ['label', 'Hourly forecast (Open-Meteo)'],
     '#lyrFlood': ['label', 'Flood-risk areas (estimate)'],
     '#lyrClouds': ['label', 'Himawari IR clouds (NASA)'],
     '#lyrSatRain': ['label', 'IMERG satellite rain (NASA, ~4 h delay)'],
     '#btnAddFav': ['text', '+ Save selected point'],
-    '.t-past': ['text', 'Past'], '.t-now': ['text', 'Now'], '.t-next': ['text', 'Nowcast'], '.t-fc': ['text', 'Forecast'],
+    '.t-past': ['text', 'Past'], '.t-now': ['text', 'Now'], '.t-next': ['text', '60-min nowcast'],
   }
 };
 let LANG = localStorage.getItem('rain.lang') || 'th';
@@ -591,7 +590,6 @@ async function refreshForecast(force = false) {
       prob: list.map((p) => p.hourly.precipitation_probability),
       rendered: new Map(),
     };
-    rebuildTimeline();
     if ($('#lyrFlood').checked) refreshFlood(true);
   } catch (e) {
     toast(navigator.onLine ? 'Open-Meteo: ' + e.message : T().offline);
@@ -618,33 +616,6 @@ function rainColor(mmh) {
   if (mmh < 10) return [26, 47, 181, 225];
   if (mmh < 25) return [177, 0, 158, 235];
   return [255, 40, 60, 245];
-}
-function renderForecastFrame(h) {
-  const f = state.forecast;
-  if (f.rendered.has(h)) return f.rendered.get(h);
-  const W = 480, H = 360;
-  const c = document.createElement('canvas'); c.width = W; c.height = H;
-  const ctx = c.getContext('2d'), img = ctx.createImageData(W, H), d = img.data;
-  const b = f.bounds;
-  // Equirectangular canvas in lat/lon; Leaflet stretches it to Mercator bounds (slight distortion, fine for a 12x9 grid)
-  const yLat = (y) => { // map canvas row to latitude in Mercator space so the overlay lines up
-    const n = lat2y(b.getNorth(), 10), s = lat2y(b.getSouth(), 10);
-    return y2lat(n + (s - n) * (y + 0.5) / H, 10);
-  };
-  for (let y = 0; y < H; y++) {
-    const lat = yLat(y);
-    for (let x = 0; x < W; x++) {
-      const lon = b.getWest() + (b.getEast() - b.getWest()) * (x + 0.5) / W;
-      const v = forecastAt(lat, lon, h);
-      const col = rainColor(v);
-      const o = (y * W + x) * 4;
-      d[o] = col[0]; d[o + 1] = col[1]; d[o + 2] = col[2]; d[o + 3] = col[3];
-    }
-  }
-  ctx.putImageData(img, 0, 0);
-  const entry = { canvas: c, url: c.toDataURL('image/png') };
-  f.rendered.set(h, entry);
-  return entry;
 }
 
 // ---------------------------------------------------------------- flood-risk estimate (terrain + forecast rain)
@@ -741,26 +712,15 @@ function rebuildTimeline(resetToNow = false) {
     for (const fr of r.frames) if (fr.canvas) frames.push({ kind: 'radar', time: fr.time, url: fr.url });
     for (const nc of r.nowcast) frames.push({ kind: 'nowcast', time: nc.time, url: nc.url });
   }
-  const f = state.forecast;
-  if (f) {
-    const lastT = frames.length ? frames[frames.length - 1].time : Date.now() / 1000;
-    const now = Date.now() / 1000;
-    for (let h = 0; h < f.times.length; h++) {
-      const t = f.times[h];
-      if (t <= lastT + 1800) continue;
-      if (t > now + CFG.forecastHours * 3600) break;
-      // hourly for the first 12 h, then every 3 h, so the slider is not dominated by far-out model frames
-      if (t > now + 12 * 3600 && (new Date(t * 1000).getUTCHours() % 3) !== 0) continue;
-      frames.push({ kind: 'forecast', time: t, h });
-    }
-  }
+  // The coarse Open-Meteo grid is deliberately NOT drawn on the map (it looked blobby next to radar);
+  // it still feeds the point card, the chart and the flood estimate.
   // place the tick labels where those frames really sit on the slider
   const n = Math.max(1, frames.length - 1);
   const segMid = (kind) => { let a = -1, b = -1; frames.forEach((x, i) => { if (x.kind === kind) { if (a < 0) a = i; b = i; } }); return a < 0 ? -1 : (a + b) / 2; };
   const place = (sel, idx) => { const el = $(sel); if (idx < 0) { el.style.display = 'none'; return; } el.style.display = ''; el.style.left = (idx / n * 100) + '%'; };
   let nowIdx = -1; frames.forEach((x, i) => { if (x.kind === 'radar') nowIdx = i; });
   const pastMid = nowIdx > 2 ? (nowIdx - 1) / 2 : -1;
-  place('.t-past', pastMid); place('.t-now', nowIdx); place('.t-next', segMid('nowcast')); place('.t-fc', segMid('forecast'));
+  place('.t-past', pastMid); place('.t-now', nowIdx); place('.t-next', segMid('nowcast'));
   const prevTime = state.frames[state.frameIndex] ? state.frames[state.frameIndex].time : null;
   state.frames = frames;
   const slider = $('#timeSlider');
@@ -769,7 +729,7 @@ function rebuildTimeline(resetToNow = false) {
   if (resetToNow || prevTime == null) idx = nowIndex();
   else { idx = frames.findIndex((x) => x.time >= prevTime); if (idx < 0) idx = frames.length - 1; }
   showFrame(idx);
-  if (!$('#lyrRadar').checked || !$('#lyrNowcast').checked || !$('#lyrForecast').checked) applyLayerVisibility();
+  if (!$('#lyrRadar').checked || !$('#lyrNowcast').checked) applyLayerVisibility();
 }
 function nowIndex() {
   let idx = 0;
@@ -786,7 +746,6 @@ function showFrame(idx) {
   const label = $('#timeLabel');
   const nowT = nowIndex();
   label.classList.toggle('future', fr.kind === 'nowcast');
-  label.classList.toggle('forecast', fr.kind === 'forecast');
   if (fr.kind === 'radar') {
     const ago = Math.round((frames[nowT].time - fr.time) / 60);
     label.textContent = `${fmtTime(fr.time)}\n${ago === 0 ? T().now : T().minAgo(ago)}`;
@@ -795,16 +754,10 @@ function showFrame(idx) {
   } else {
     label.textContent = `${fmtDayTime(fr.time)}\n${T().fc}`;
   }
-  const on = { radar: $('#lyrRadar').checked, nowcast: $('#lyrNowcast').checked, forecast: $('#lyrForecast').checked }[fr.kind];
+  const on = { radar: $('#lyrRadar').checked, nowcast: $('#lyrNowcast').checked }[fr.kind];
   if (!on) { state.overlay.setOpacity(0); return; }
-  // model forecast frames are coarse (~10-25 km), so draw them softer than radar
-  state.overlay.setOpacity(fr.kind === 'forecast' ? state.opacity * 0.65 : state.opacity);
-  if (fr.kind === 'forecast') {
-    const e = renderForecastFrame(fr.h);
-    state.overlay.setUrl(e.url).setBounds(state.forecast.bounds);
-  } else {
-    state.overlay.setUrl(fr.url).setBounds(state.radar.region.bounds);
-  }
+  state.overlay.setOpacity(state.opacity);
+  state.overlay.setUrl(fr.url).setBounds(state.radar.region.bounds);
 }
 function applyLayerVisibility() { showFrame(state.frameIndex); }
 
@@ -821,7 +774,7 @@ function togglePlay(force) {
       let next = state.frameIndex + 1;
       if (next >= n) next = 0;
       showFrame(next);
-    }, state.frames[state.frameIndex] && state.frames[state.frameIndex].kind === 'forecast' ? 450 : 350);
+    }, 350);
   }
 }
 
@@ -1005,7 +958,7 @@ function onMoveEnd() {
   const c = state.map.getCenter();
   localStorage.setItem('rain.view', JSON.stringify({ lat: +c.lat.toFixed(4), lon: +c.lng.toFixed(4), z: state.map.getZoom() }));
   clearTimeout(moveTimer);
-  moveTimer = setTimeout(() => { refreshRadar(); refreshForecast(); refreshFlood(); }, 700);
+  moveTimer = setTimeout(() => { refreshRadar(); if ($('#lyrFlood').checked) { refreshForecast(); refreshFlood(); } }, 700);
 }
 
 function applyLang() {
@@ -1018,10 +971,10 @@ function applyLang() {
   });
   if (LANG === 'th') { // restore Thai defaults
     $('#searchInput').placeholder = 'ค้นหาเมือง อำเภอ สถานที่…';
-    const th = { lyrRadar: 'เรดาร์ฝน (ย้อนหลัง 2 ชม.)', lyrNowcast: 'คาดการณ์ 60 นาที (คำนวณจากเรดาร์)', lyrForecast: 'พยากรณ์รายชั่วโมง (Open-Meteo)', lyrFlood: 'พื้นที่เสี่ยงน้ำท่วม (ประมาณการ)', lyrClouds: 'เมฆดาวเทียม Himawari IR (NASA)', lyrSatRain: 'ฝนดาวเทียม IMERG (NASA, ช้า ~4 ชม.)' };
+    const th = { lyrRadar: 'เรดาร์ฝน (ย้อนหลัง 2 ชม.)', lyrNowcast: 'คาดการณ์ 60 นาที (คำนวณจากเรดาร์)', lyrFlood: 'พื้นที่เสี่ยงน้ำท่วม (ประมาณการ)', lyrClouds: 'เมฆดาวเทียม Himawari IR (NASA)', lyrSatRain: 'ฝนดาวเทียม IMERG (NASA, ช้า ~4 ชม.)' };
     for (const [id, v] of Object.entries(th)) { const lab = $('#' + id).closest('label'); lab.childNodes[lab.childNodes.length - 1].textContent = ' ' + v; }
     $('#btnAddFav').textContent = '+ บันทึกจุดที่เลือกไว้';
-    $('.t-past').textContent = 'ย้อนหลัง'; $('.t-now').textContent = 'ตอนนี้'; $('.t-next').textContent = 'คาดการณ์'; $('.t-fc').textContent = 'พยากรณ์';
+    $('.t-past').textContent = 'ย้อนหลัง'; $('.t-now').textContent = 'ตอนนี้'; $('.t-next').textContent = 'คาดการณ์ 60 นาที';
   }
   renderFavs(); renderStatus(); if (state.frames.length) showFrame(state.frameIndex);
 }
@@ -1043,7 +996,7 @@ function bindUI() {
   $('#opacity').addEventListener('input', (e) => { state.opacity = +e.target.value; showFrame(state.frameIndex); });
   $('#basemap').value = localStorage.getItem('rain.basemap') || 'dark';
   $('#basemap').onchange = (e) => setBasemap(e.target.value);
-  ['lyrRadar', 'lyrNowcast', 'lyrForecast'].forEach((id) => { $('#' + id).onchange = applyLayerVisibility; });
+  ['lyrRadar', 'lyrNowcast'].forEach((id) => { $('#' + id).onchange = applyLayerVisibility; });
   $('#lyrFlood').onchange = (e) => { if (e.target.checked) refreshFlood(true); else { state.floodOverlay.remove(); } renderStatus(); };
   $('#lyrClouds').onchange = (e) => setGibsLayer('clouds', 'Himawari_AHI_Band13_Clean_Infrared', e.target.checked);
   $('#lyrSatRain').onchange = (e) => setGibsLayer('satrain', 'IMERG_Precipitation_Rate_30min', e.target.checked);
@@ -1070,8 +1023,8 @@ async function boot() {
   renderFavs();
   loadCoverage();
   refreshRadar(true);
-  refreshForecast(true);
-  setInterval(() => { refreshRadar(); refreshForecast(); }, CFG.refreshEveryMs);
+  if ($('#lyrFlood').checked) refreshForecast(true);   // the grid is only needed for the flood estimate
+  setInterval(() => { refreshRadar(); if ($('#lyrFlood').checked) refreshForecast(); }, CFG.refreshEveryMs);
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }

@@ -79,7 +79,6 @@ select { background: #122536; color: var(--text); border: 1px solid rgba(255,255
 .ticks .t-now::before { content: ''; position: absolute; left: 50%; top: 13px; width: 2px; height: 8px; background: #fff; opacity: .7; }
 .ticks .t-now { color: #fff; font-weight: 600; }
 .ticks .t-next { color: var(--accent-2); }
-.ticks .t-fc { color: #9ad3ff; }
 input[type=range]#timeSlider { width: 100%; margin: 2px 0 0; accent-color: var(--accent); height: 28px; }
 .timelabel { min-width: 74px; text-align: right; font-variant-numeric: tabular-nums; font-size: 13px; line-height: 1.2; white-space: pre-line; }
 .timelabel.future { color: var(--accent-2); }
