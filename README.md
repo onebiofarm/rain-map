@@ -3,7 +3,7 @@
 เว็บแอปหน้าเดียว (HTML + JS) เปิดได้บน iOS, Android, Windows, macOS และติดตั้งลงหน้าจอหลักได้แบบ PWA
 ไม่มีโฆษณา ไม่เก็บเงิน ใช้เฉพาะข้อมูลสาธารณะที่ฟรีและอนุญาตให้ใช้ส่วนตัว/การศึกษา
 
-โฟลเดอร์ `app/` คือตัวแอปทั้งหมด (`index.html`, `app.js`, `styles.css`, `sw.js`, `manifest.webmanifest`, `icons/`)
+โฟลเดอร์ `docs/` คือตัวแอปทั้งหมด (ตั้งชื่อ docs เพื่อให้ GitHub Pages เสิร์ฟจาก root URL ได้) (`index.html`, `app.js`, `styles.css`, `sw.js`, `manifest.webmanifest`, `icons/`)
 ไฟล์ `RESEARCH.md` คือผลวิเคราะห์ APK ต้นฉบับและแหล่งข้อมูลที่ใช้ได้
 
 ## ฟีเจอร์
@@ -22,7 +22,7 @@
 ตัวอย่างด้วย Python:
 
 ```bash
-cd app && python -m http.server 8765
+cd docs && python -m http.server 8765
 ```
 
 แล้วเปิด http://localhost:8765/
@@ -32,15 +32,15 @@ cd app && python -m http.server 8765
 2. ในโฟลเดอร์นี้:
 
 ```bash
-git init && git add app README.md RESEARCH.md .gitignore && git commit -m "Rain map PWA"
+git init && git add docs README.md RESEARCH.md .gitignore && git commit -m "Rain map PWA"
 ```
 
 ```bash
 git branch -M main && git remote add origin https://github.com/<ชื่อผู้ใช้>/rain-map.git && git push -u origin main
 ```
 
-3. ไปที่ Settings → Pages → Source: "Deploy from a branch" → Branch `main`, Folder `/ (root)`
-4. เปิด `https://<ชื่อผู้ใช้>.github.io/rain-map/app/` (หรือย้ายไฟล์ใน `app/` ขึ้นมาไว้ที่ root ของ repo เพื่อให้ URL สั้นลง)
+3. ไปที่ Settings → Pages → Source: "Deploy from a branch" → Branch `main`, Folder `/docs`
+4. เปิด `https://<ชื่อผู้ใช้>.github.io/rain-map/`
 5. บน iPhone: เปิดใน Safari → ปุ่มแชร์ → "เพิ่มไปยังหน้าจอโฮม"; บน Android/Chrome: เมนู → "ติดตั้งแอป"
 
 ## ข้อจำกัดและข้อตกลงการใช้ข้อมูล
@@ -49,7 +49,7 @@ git branch -M main && git remote add origin https://github.com/<ชื่อผ�
 - NASA GIBS และ Terrain Tiles: ไม่มีข้อจำกัด
 - คาดการณ์ 60 นาทีและความเสี่ยงน้ำท่วมเป็นการประมาณการเชิงสถิติ ไม่ใช่คำเตือนทางราชการ
 
-## โครงสร้างโค้ดสั้นๆ (`app/app.js`)
+## โครงสร้างโค้ดสั้นๆ (`docs/app.js`)
 - `refreshRadar()` เลือกช่วงไทล์ที่ครอบหน้าจอ (≤20 ไทล์, ซูม ≤7) ต่อเป็นภาพเดียวต่อเฟรม แสดงผ่าน `L.imageOverlay`
 - `computeNowcast()` → `estimateMotion()` หาเวกเตอร์การเคลื่อนที่ (ค้นหาทั่วภาพ + ปรับละเอียดรายบล็อก 12 px) แล้ว warp เฟรมล่าสุดไปข้างหน้า 6 ก้าว
 - `refreshForecast()` ดึง Open-Meteo หลายพิกัดในคำขอเดียว → `renderForecastFrame()` วาด heatmap
